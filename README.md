@@ -1,5 +1,3 @@
-Thanks for sharing the Jenkins pipeline script! Based on your pipeline and the details you provided, here's an updated README file:
-
 ---
 
 # DevOps Task: Automated Deployment with Jenkins and Docker
