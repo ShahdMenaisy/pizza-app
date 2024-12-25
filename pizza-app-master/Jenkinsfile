@@ -1,0 +1,114 @@
+pipeline { 
+    agent any
+    environment { 
+        GITHUB_TOKEN = credentials('255da05b-0379-4ab0-a77c-2b07fb6c7b8c')  
+        DOCKER_IMAGE_NAME_1 = 'shahdabdulaziz/back-end'
+        DOCKER_IMAGE_NAME_2 = 'shahdabdulaziz/front-end'
+        DOCKER_IMAGE_NAME_3 = 'shahdabdulaziz/database' 
+    }
+    stages {
+        stage('Fetch_code') {
+            steps {
+                script {
+                    if (fileExists('pizza-app/.git') && fileExists('pizza-app/pizza-app-master')  ) {
+                        echo "Repository exists. Performing git pull..."
+                        sh 'git pull'
+                    } else {
+                        echo "Repository doesn't exist. Performing git clone..."
+                        sh 'git clone https://$GITHUB_TOKEN@github.com/ShahdMenaisy/pizza-app.git pizza-app'
+                    }
+                }
+                sh 'ls'
+            }
+        }
+        
+        stage('Login to Docker Hub') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: '9bacbeb1-3729-47ba-8c5b-fb3957c3db45', variable: 'DOCKER_PASSWORD')]) {
+                        sh 'echo $DOCKER_PASSWORD | docker login -u shahdabdulaziz --password-stdin'
+                    }
+                }
+            }
+        }
+        
+        stage('Back-end build') {
+            steps {
+                sh '''
+                cd pizza-app/pizza-app-master/Back-end 
+                docker build --tag $DOCKER_IMAGE_NAME_1 . 
+                docker push $DOCKER_IMAGE_NAME_1
+                '''
+            }
+        }
+        
+        stage('Front-end build') {
+            steps {
+                sh '''
+                    cd pizza-app/pizza-app-master/Front-end
+                    docker build --tag $DOCKER_IMAGE_NAME_2 . 
+                    docker push $DOCKER_IMAGE_NAME_2
+                '''
+            }
+        }
+
+        stage('Database build') {
+            steps {
+                sh '''
+                    cd pizza-app/pizza-app-master/Database
+                    docker build --tag $DOCKER_IMAGE_NAME_3 . 
+                    docker push $DOCKER_IMAGE_NAME_3
+                '''
+            }
+        }
+        
+        stage('Run Back-end container') {
+            steps {
+                sh '''
+                # Check if network exists before creating
+                if ! docker network ls | grep -q "pizza-app-network"; then
+                    echo "Creating custom network pizza-app-network..."
+                    docker network create pizza-app-network
+                fi
+
+                # Remove the existing back-end container if it exists
+                if docker ps -a --format '{{.Names}}' | grep -q "back-end-container"; then
+                    echo "Removing existing back-end container..."
+                    docker rm -f back-end-container
+                fi
+
+                echo "Running back-end container..."
+                docker run -d --name back-end-container --network pizza-app-network -p 3001:3000 $DOCKER_IMAGE_NAME_1
+                '''
+            }
+        }
+
+        stage('Run Front-end container') {
+            steps {
+                sh '''
+                if docker ps -a --format '{{.Names}}' | grep -q "front-end-container"; then
+                    echo "Removing existing front-end container..."
+                    docker rm -f front-end-container
+                fi
+
+                echo "Running front-end container..."
+                docker run -d --name front-end-container --network pizza-app-network -p 8082:80 $DOCKER_IMAGE_NAME_2
+                '''
+            }
+        }
+
+        stage('Run Database container') {
+            steps {
+                sh '''
+                if docker ps -a --format '{{.Names}}' | grep -q "database-container"; then
+                    echo "Removing existing database container..."
+                    docker rm -f database-container
+                fi
+
+                echo "Running database container..."
+                docker run -d --name database-container --network pizza-app-network -p 27017:27017 $DOCKER_IMAGE_NAME_3
+                '''
+            }
+        }
+    }
+}
